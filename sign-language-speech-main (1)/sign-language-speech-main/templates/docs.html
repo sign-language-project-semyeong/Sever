@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign Language Speech API Docs</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffdf8;
+      --ink: #1f2933;
+      --muted: #6b7280;
+      --accent: #0f766e;
+      --accent-strong: #115e59;
+      --line: #d6d3d1;
+      --warn: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", "Noto Sans KR", sans-serif; color: var(--ink); background: linear-gradient(135deg, #f8fafc, #f4f1ea 52%, #eefbf8 100%); }
+    .layout { display: grid; grid-template-columns: 380px 1fr; min-height: 100vh; }
+    .side { border-right: 1px solid var(--line); background: rgba(255,253,248,.92); padding: 24px; }
+    .card { background: var(--panel); border: 1px solid rgba(15,118,110,.14); border-radius: 18px; padding: 18px; box-shadow: 0 18px 40px rgba(15,23,42,.08); margin-bottom: 16px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    h2 { margin: 0 0 10px; font-size: 17px; }
+    p, label { color: var(--muted); line-height: 1.5; }
+    .controls, .row { display: grid; gap: 10px; }
+    select, button { width: 100%; border-radius: 12px; border: 1px solid var(--line); padding: 11px 12px; font: inherit; background: white; }
+    button { background: var(--accent); color: white; border: none; font-weight: 700; cursor: pointer; }
+    button:hover { background: var(--accent-strong); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .ghost { background: white; color: var(--ink); border: 1px solid var(--line); }
+    .status { font-size: 14px; font-weight: 600; color: var(--accent-strong); }
+    .error { color: var(--warn); }
+    .transcript { min-height: 180px; white-space: pre-wrap; word-break: break-word; background: #f8fafc; border: 1px solid #dbe4ea; border-radius: 14px; padding: 14px; font-size: 15px; line-height: 1.6; }
+    .hint { font-size: 13px; }
+    .badge { display: inline-block; border-radius: 999px; background: #ccfbf1; color: #115e59; padding: 6px 10px; font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+    iframe { border: 0; width: 100%; height: 100vh; background: white; }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .side { border-right: 0; border-bottom: 1px solid var(--line); }
+      iframe { height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="side">
+      <div class="card">
+        <div class="badge">Live Mic STT</div>
+        <h1>Browser Mic Test</h1>
+        <p>This panel records WAV chunks in the browser and sends them to the realtime STT API.</p>
+        <div class="controls">
+          <div class="row">
+            <label for="language">STT Language</label>
+            <select id="language">
+              <option value="ko-KR" selected>ko-KR</option>
+              <option value="en-US">en-US</option>
+              <option value="ja-JP">ja-JP</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="chunkMs">Chunk Interval</label>
+            <select id="chunkMs">
+              <option value="1500">1.5 sec</option>
+              <option value="3000" selected>3.0 sec</option>
+              <option value="5000">5.0 sec</option>
+            </select>
+          </div>
+          <button id="startBtn">Start Mic</button>
+          <button id="stopBtn" class="ghost" disabled>Stop</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Status</h2>
+        <div id="status" class="status">Idle</div>
+        <p class="hint">Use `http://127.0.0.1:5000/docs` or `http://localhost:5000/docs` so the browser can request microphone permission normally.</p>
+      </div>
+
+      <div class="card">
+        <h2>Transcript</h2>
+        <div id="transcript" class="transcript"></div>
+      </div>
+    </aside>
+    <main>
+      <iframe src="{{ swagger_ui_url }}"></iframe>
+    </main>
+  </div>
+
+  <script>
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusEl = document.getElementById("status");
+    const transcriptEl = document.getElementById("transcript");
+    const languageEl = document.getElementById("language");
+    const chunkMsEl = document.getElementById("chunkMs");
+
+    let mediaStream = null;
+    let sessionId = null;
+    let isStopping = false;
+    let activeRequests = 0;
+    let audioContext = null;
+    let sourceNode = null;
+    let processorNode = null;
+    let chunkTimer = null;
+    let autoStopTimer = null;
+    let pcmChunks = [];
+    let sampleRate = 16000;
+    let sequenceNumber = 1;
+    let maxDurationMs = {{ max_realtime_duration_ms }};
+    let browserRecognition = null;
+    let browserTranscript = "";
+    let serverTranscript = "";
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle("error", isError);
+    }
+
+    function renderTranscript() {
+      const combined = [serverTranscript, browserTranscript].filter(Boolean).join("\n");
+      transcriptEl.textContent = combined || "";
+    }
+
+    function setTranscript(text) {
+      serverTranscript = text || "";
+      renderTranscript();
+    }
+
+    function setBrowserTranscript(text) {
+      browserTranscript = text || "";
+      renderTranscript();
+    }
+
+    function downsampleBuffer(buffer, inputRate, outputRate) {
+      if (outputRate >= inputRate) return buffer;
+      const ratio = inputRate / outputRate;
+      const newLength = Math.round(buffer.length / ratio);
+      const result = new Float32Array(newLength);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+      while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0;
+        let count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i += 1) {
+          accum += buffer[i];
+          count += 1;
+        }
+        result[offsetResult] = count > 0 ? accum / count : 0;
+        offsetResult += 1;
+        offsetBuffer = nextOffsetBuffer;
+      }
+      return result;
+    }
+
+    function mergeFloat32Arrays(chunks) {
+      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const result = new Float32Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return result;
+    }
+
+    function encodeWav(samples, outputRate) {
+      const bytesPerSample = 2;
+      const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+      const view = new DataView(buffer);
+      function writeString(offset, text) {
+        for (let i = 0; i < text.length; i += 1) {
+          view.setUint8(offset + i, text.charCodeAt(i));
+        }
+      }
+      writeString(0, "RIFF");
+      view.setUint32(4, 36 + samples.length * bytesPerSample, true);
+      writeString(8, "WAVE");
+      writeString(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, outputRate, true);
+      view.setUint32(28, outputRate * bytesPerSample, true);
+      view.setUint16(32, bytesPerSample, true);
+      view.setUint16(34, 16, true);
+      writeString(36, "data");
+      view.setUint32(40, samples.length * bytesPerSample, true);
+      let offset = 44;
+      for (let i = 0; i < samples.length; i += 1) {
+        const sample = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+      return new Blob([buffer], { type: "audio/wav" });
+    }
+
+    function setupBrowserRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        browserRecognition = null;
+        return;
+      }
+      browserRecognition = new SpeechRecognition();
+      browserRecognition.lang = languageEl.value;
+      browserRecognition.continuous = true;
+      browserRecognition.interimResults = true;
+      browserRecognition.onresult = (event) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i += 1) {
+          transcript += event.results[i][0].transcript + " ";
+        }
+        setBrowserTranscript(transcript.trim());
+      };
+      browserRecognition.onerror = () => {};
+      browserRecognition.onend = () => {
+        if (!isStopping) {
+          try { browserRecognition.start(); } catch (error) {}
+        }
+      };
+    }
+
+    async function startSession() {
+      const response = await fetch("/stt/realtime/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language: languageEl.value }),
+      });
+      if (!response.ok) throw new Error("Failed to start realtime session");
+      const data = await response.json();
+      if (data.max_duration_ms) maxDurationMs = data.max_duration_ms;
+      return data;
+    }
+
+    async function finishSession() {
+      if (!sessionId) return;
+      const response = await fetch("/stt/realtime/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      if (!response.ok) throw new Error("Failed to finish realtime session");
+      const data = await response.json();
+      setTranscript(data.text || "");
+      setBrowserTranscript("");
+      sessionId = null;
+    }
+
+    async function uploadChunk(blob) {
+      if (!blob || blob.size === 0 || !sessionId) return;
+      activeRequests += 1;
+      const currentSequenceNumber = sequenceNumber;
+      sequenceNumber += 1;
+      const formData = new FormData();
+      formData.append("session_id", sessionId);
+      formData.append("sequence_number", String(currentSequenceNumber));
+      formData.append("language", languageEl.value);
+      formData.append("audio", blob, "chunk.wav");
+      try {
+        const response = await fetch("/stt/realtime/chunk", { method: "POST", body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Failed to upload chunk");
+        setTranscript(data.accumulated_text || "");
+        setStatus(data.warning || "Listening");
+      } finally {
+        activeRequests -= 1;
+        if (isStopping && activeRequests === 0 && sessionId) {
+          await finishSession();
+          setStatus("Stopped");
+        }
+      }
+    }
+
+    async function flushPcmChunks() {
+      if (!pcmChunks.length || !sessionId) return;
+      const merged = mergeFloat32Arrays(pcmChunks);
+      const durationSeconds = merged.length / sampleRate;
+      if (durationSeconds < {{ min_chunk_seconds }}) return;
+      pcmChunks = [];
+      const downsampled = downsampleBuffer(merged, audioContext.sampleRate, sampleRate);
+      const wavBlob = encodeWav(downsampled, sampleRate);
+      await uploadChunk(wavBlob);
+    }
+
+    function waitForPendingRequests() {
+      if (activeRequests === 0 && sessionId) {
+        finishSession().then(() => setStatus("Stopped")).catch((error) => setStatus(error.message, true));
+      }
+    }
+
+    async function cleanupRecorderState() {
+      if (chunkTimer) { clearInterval(chunkTimer); chunkTimer = null; }
+      if (autoStopTimer) { clearTimeout(autoStopTimer); autoStopTimer = null; }
+      if (browserRecognition) { try { browserRecognition.stop(); } catch (error) {} }
+      if (processorNode) { processorNode.disconnect(); processorNode = null; }
+      if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+      if (mediaStream) { mediaStream.getTracks().forEach((track) => track.stop()); mediaStream = null; }
+      if (audioContext) { await audioContext.close(); audioContext = null; }
+    }
+
+    startBtn.addEventListener("click", async () => {
+      try {
+        serverTranscript = "";
+        browserTranscript = "";
+        renderTranscript();
+        setStatus("Requesting microphone permission");
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const session = await startSession();
+        sessionId = session.session_id;
+        sequenceNumber = 1;
+        isStopping = false;
+        setupBrowserRecognition();
+        if (browserRecognition) {
+          browserRecognition.lang = languageEl.value;
+          browserRecognition.start();
+        }
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+        await audioContext.resume();
+        sourceNode = audioContext.createMediaStreamSource(mediaStream);
+        processorNode = audioContext.createScriptProcessor(4096, 1, 1);
+        processorNode.onaudioprocess = (event) => {
+          const input = event.inputBuffer.getChannelData(0);
+          pcmChunks.push(new Float32Array(input));
+        };
+        sourceNode.connect(processorNode);
+        processorNode.connect(audioContext.destination);
+        chunkTimer = window.setInterval(async () => {
+          try { await flushPcmChunks(); } catch (error) { setStatus(error.message || "Chunk processing error", true); }
+        }, Number(chunkMsEl.value));
+        autoStopTimer = window.setTimeout(() => { if (!isStopping) stopBtn.click(); }, maxDurationMs);
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        languageEl.disabled = true;
+        chunkMsEl.disabled = true;
+        setStatus(`Listening (max ${Math.floor(maxDurationMs / 1000)} sec)`);
+      } catch (error) {
+        setStatus(error.message || "Failed to start microphone", true);
+        await cleanupRecorderState();
+      }
+    });
+
+    stopBtn.addEventListener("click", async () => {
+      isStopping = true;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      languageEl.disabled = false;
+      chunkMsEl.disabled = false;
+      setStatus("Stopping");
+      try {
+        if (chunkTimer) { clearInterval(chunkTimer); chunkTimer = null; }
+        if (autoStopTimer) { clearTimeout(autoStopTimer); autoStopTimer = null; }
+        if (browserRecognition) { try { browserRecognition.stop(); } catch (error) {} }
+        await flushPcmChunks();
+        await cleanupRecorderState();
+        if (activeRequests === 0 && sessionId) {
+          await finishSession();
+          setStatus("Stopped");
+        } else {
+          waitForPendingRequests();
+        }
+      } catch (error) {
+        setStatus(error.message || "Failed to stop session", true);
+      }
+    });
+  </script>
+</body>
+</html>
