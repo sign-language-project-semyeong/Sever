@@ -12,6 +12,7 @@
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.3",
     "ws": "^8.20.0"
   }
 }

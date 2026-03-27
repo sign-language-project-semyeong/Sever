@@ -6,6 +6,7 @@ const express = require("express");
 const cors = require("cors");
 const { WebSocketServer } = require("ws");
 const { GoogleGenAI } = require("@google/genai");
+const { createProxyMiddleware } = require("http-proxy-middleware");
 
 dotenv.config();
 
@@ -57,6 +58,18 @@ const responseCache = new Map();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+
+// ── Python STT/TTS 서버 프록시 ─────────────────────────────────────────────────
+// Python Flask 서버(포트 5000)로 /tts, /stt, /voices, /docs 요청 프록시
+const PYTHON_SERVER_URL = process.env.PYTHON_SERVER_URL || "http://localhost:5000";
+const speechProxy = createProxyMiddleware({
+  target: PYTHON_SERVER_URL,
+  changeOrigin: true,
+});
+app.use("/tts", speechProxy);
+app.use("/stt", speechProxy);
+app.use("/voices", speechProxy);
+app.use("/docs", speechProxy);
 
 // ── 세션 버퍼 ──────────────────────────────────────────────────────────────────
 // sessionId → { tokens: string[], timer: Timeout | null }
