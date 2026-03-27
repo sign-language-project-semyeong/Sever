@@ -125,6 +125,56 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+// 수어 단어 → 문장 번역 → TTS 오디오 반환 (체인 엔드포인트)
+// POST /gloss-to-speech { glosses: ["person", "eat", "apple"] }
+app.post("/gloss-to-speech", async (req, res) => {
+  const glosses = normalizeGlossInput(req.body.glosses);
+  if (glosses.length === 0) {
+    return res.status(400).json({ error: "glosses is required." });
+  }
+
+  let sentence;
+  try {
+    const result = await buildSentenceFromGlosses(glosses);
+    sentence = result.sentence;
+  } catch (error) {
+    console.error("Translation error:", error);
+    return res.status(500).json({ error: "Failed to translate glosses." });
+  }
+
+  // Python TTS 서버 호출
+  const ttsBody = JSON.stringify({ text: sentence, lang: "ko" });
+  const ttsUrl = new URL(`${PYTHON_SERVER_URL}/tts`);
+  const options = {
+    hostname: ttsUrl.hostname,
+    port: ttsUrl.port || 5000,
+    path: "/tts",
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(ttsBody),
+    },
+  };
+
+  const ttsReq = http.request(options, (ttsRes) => {
+    if (ttsRes.statusCode !== 200) {
+      return res.status(502).json({ error: "TTS failed.", sentence });
+    }
+    res.set("Content-Type", "audio/mpeg");
+    res.set("X-Sentence", encodeURIComponent(sentence));
+    res.set("X-Glosses", glosses.join(","));
+    ttsRes.pipe(res);
+  });
+
+  ttsReq.on("error", (err) => {
+    console.error("TTS request error:", err);
+    res.status(502).json({ error: "Python TTS server unreachable.", sentence });
+  });
+
+  ttsReq.write(ttsBody);
+  ttsReq.end();
+});
+
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
