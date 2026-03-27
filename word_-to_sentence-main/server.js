@@ -278,7 +278,33 @@ const wss = new WebSocketServer({ server });
 // sessionId → WebSocket 클라이언트 맵
 const wsClients = new Map();
 
-// 타이머 만료 시 자동 번역 후 결과를 WebSocket으로 푸시
+// Python TTS 호출 → 오디오 버퍼 반환
+function callPythonTtsBuffer(sentence) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ text: sentence, lang: "ko" });
+    const ttsUrl = new URL(`${PYTHON_SERVER_URL}/tts`);
+    const options = {
+      hostname: ttsUrl.hostname,
+      port: ttsUrl.port || 5000,
+      path: "/tts",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    };
+    const req = http.request(options, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// 타이머 만료 시 자동 번역 → TTS → WebSocket으로 실시간 푸시
 async function flushSession(sessionId) {
   const session = sessionBuffers.get(sessionId);
   if (!session || session.tokens.length === 0) return;
@@ -286,21 +312,41 @@ async function flushSession(sessionId) {
   const glosses = [...session.tokens];
   clearSession(sessionId);
 
+  const ws = wsClients.get(sessionId);
+
   try {
     const result = await buildSentenceFromGlosses(glosses);
-    const payload = JSON.stringify({
-      type: "sentence",
-      sessionId,
-      glosses,
-      sentence: result.sentence,
-      cached: result.cached,
-      model: defaultModel
-    });
+    const sentence = result.sentence;
 
-    // 해당 세션의 WebSocket 클라이언트에게 전송
-    const ws = wsClients.get(sessionId);
+    // 1. 번역된 문장 먼저 전송
     if (ws && ws.readyState === ws.OPEN) {
-      ws.send(payload);
+      ws.send(JSON.stringify({
+        type: "sentence",
+        sessionId,
+        glosses,
+        sentence,
+        cached: result.cached,
+        model: defaultModel
+      }));
+    }
+
+    // 2. TTS 오디오 생성 후 전송
+    try {
+      const audioBuffer = await callPythonTtsBuffer(sentence);
+      if (ws && ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({
+          type: "audio",
+          sessionId,
+          sentence,
+          audio: audioBuffer.toString("base64"),
+          mimeType: "audio/mpeg"
+        }));
+      }
+    } catch (ttsError) {
+      console.error("TTS error:", ttsError);
+      if (ws && ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ type: "error", error: "TTS failed.", sentence }));
+      }
     }
   } catch (error) {
     console.error("Auto-flush error:", error);
