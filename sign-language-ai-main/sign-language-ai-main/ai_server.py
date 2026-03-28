@@ -72,6 +72,8 @@ extractor = HandLandmarkExtractor(
 print("[AI Server] 모델 로드 완료")
 
 # ── 세션 상태 ──────────────────────────────────────────────────────────────────
+SESSION_TIMEOUT = 300  # 5분 동안 요청 없으면 세션 삭제
+
 _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
 
@@ -85,13 +87,29 @@ def _new_session() -> dict:
         "cooldown_count" : 0,
         "last_token_time": time.time(),
         "last_commit_time": 0.0,
+        "last_active"    : time.time(),
     }
 
 def get_session(sid: str) -> dict:
     with _lock:
         if sid not in _sessions:
             _sessions[sid] = _new_session()
+        _sessions[sid]["last_active"] = time.time()
         return _sessions[sid]
+
+def _cleanup_sessions() -> None:
+    """만료된 세션 주기적으로 삭제 (5분마다)"""
+    while True:
+        time.sleep(300)
+        now = time.time()
+        with _lock:
+            expired = [sid for sid, s in _sessions.items()
+                       if now - s.get("last_active", 0) > SESSION_TIMEOUT]
+            for sid in expired:
+                del _sessions[sid]
+                print(f"[AI Server] 만료 세션 삭제: {sid}")
+
+threading.Thread(target=_cleanup_sessions, daemon=True).start()
 
 # ── 헬퍼 ───────────────────────────────────────────────────────────────────────
 def pad_sequence(seq: list, ml: int, isz: int) -> np.ndarray:

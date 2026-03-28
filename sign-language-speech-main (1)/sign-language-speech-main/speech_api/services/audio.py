@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import threading
 import wave
 from pathlib import Path
 from uuid import uuid4
@@ -29,6 +30,15 @@ TTS_TLDS = ["com", "co.kr", "com.au", "co.jp"]
 STT_LANGUAGE_OPTIONS = ["ko-KR", "en-US", "ja-JP"]
 
 
+def _delete_dir_later(path: Path, delay: float = 10.0) -> None:
+    """파일 전송 완료 후 임시 폴더 삭제 (10초 뒤)"""
+    def _rm():
+        import time
+        time.sleep(delay)
+        shutil.rmtree(path, ignore_errors=True)
+    threading.Thread(target=_rm, daemon=True).start()
+
+
 def synthesize_to_audio(
     text: str,
     lang: str = DEFAULT_LANG,
@@ -40,6 +50,8 @@ def synthesize_to_audio(
     output_path = output_dir / "speech.mp3"
     tts = gTTS(text=text, lang=lang, tld=tld, slow=slow)
     tts.save(str(output_path))
+    # 전송 완료 후 임시 폴더 자동 삭제
+    _delete_dir_later(output_dir)
     return output_path
 
 
