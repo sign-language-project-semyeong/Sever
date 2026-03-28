@@ -69,6 +69,7 @@ model, idx2label, max_len, input_size = load_model(CHECKPOINT_PATH)
 extractor = HandLandmarkExtractor(
     max_num_hands=2, model_asset_path=str(MODEL_ASSET_PATH)
 )
+_extractor_lock = threading.Lock()  # MediaPipe는 멀티스레드 비안전 → 락 필요
 print("[AI Server] 모델 로드 완료")
 
 # ── 세션 상태 ──────────────────────────────────────────────────────────────────
@@ -185,8 +186,9 @@ def infer():
 
     s = get_session(sid)
 
-    # 랜드마크 추출
-    frame_feature = extractor.extract_from_frame(frame, fps=fps)[0]
+    # 랜드마크 추출 (MediaPipe 멀티스레드 비안전 → 락으로 보호)
+    with _extractor_lock:
+        frame_feature = extractor.extract_from_frame(frame, fps=fps)[0]
     has_hands = bool(np.any(np.abs(frame_feature) > 1e-6))
     s["frame_buffer"].append(frame_feature)
 
