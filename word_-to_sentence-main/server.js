@@ -71,6 +71,15 @@ app.use("/stt", speechProxy);
 app.use("/voices", speechProxy);
 app.use("/docs", speechProxy);
 
+// ── AI 추론 서버 프록시 (포트 5001) ────────────────────────────────────────────
+// Kotlin 앱 → POST /infer (프레임) → AI 서버 → 단어 감지 → Node.js /token 자동 전송
+const AI_SERVER_URL = process.env.AI_SERVER_URL || "http://localhost:5001";
+const aiProxy = createProxyMiddleware({
+  target: AI_SERVER_URL,
+  changeOrigin: true,
+});
+app.use("/infer", aiProxy);
+
 // ── 세션 버퍼 ──────────────────────────────────────────────────────────────────
 // sessionId → { tokens: string[], timer: Timeout | null }
 const sessionBuffers = new Map();

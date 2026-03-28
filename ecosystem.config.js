@@ -15,5 +15,11 @@ module.exports = {
       cwd: "./sign-language-speech-main (1)/sign-language-speech-main",
       interpreter: "py",
     },
+    {
+      name: "ai-server",
+      script: "ai_server.py",
+      cwd: "./sign-language-ai-main/sign-language-ai-main",
+      interpreter: "py",
+    },
   ],
 };
