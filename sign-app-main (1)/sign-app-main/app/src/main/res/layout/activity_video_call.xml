@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- 카메라 미리보기 (전체 화면) -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/preview_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 상단 연결 상태 -->
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="32dp"
+        android:text="연결 중..."
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:background="#99000000"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="5dp"/>
+
+    <!-- 하단 번역 문장 + 버튼 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="#CC000000"
+        android:padding="20dp">
+
+        <!-- 번역된 문장 표시 -->
+        <TextView
+            android:id="@+id/tv_sentence"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="수어를 보여주세요..."
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:gravity="center"
+            android:minHeight="64dp"
+            android:paddingBottom="20dp"/>
+
+        <!-- 버튼 행 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <!-- 음성 인식(STT) 버튼 -->
+            <ImageButton
+                android:id="@+id/btn_mic"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:layout_marginEnd="48dp"
+                android:background="@drawable/bg_circle_blue"
+                android:src="@android:drawable/ic_btn_speak_now"
+                android:contentDescription="음성 인식" />
+
+            <!-- 통화 종료 버튼 -->
+            <ImageButton
+                android:id="@+id/btn_hangup"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/bg_circle_red"
+                android:src="@drawable/ic_call"
+                android:rotation="135"
+                android:contentDescription="통화 종료" />
+
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>
