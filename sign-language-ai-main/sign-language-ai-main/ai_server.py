@@ -32,9 +32,15 @@ from src.models.gru_model import GRUSignClassifier
 from src.preprocess.extract_landmarks import HandLandmarkExtractor
 
 # ── 설정 ───────────────────────────────────────────────────────────────────────
-NODE_SERVER_URL   = "http://localhost:3000"
-CHECKPOINT_PATH   = ROOT / "models" / "checkpoints_top50" / "best_gru_model.pt"
+import os
+NODE_SERVER_URL   = os.environ.get("NODE_SERVER_URL", "http://localhost:3000")
+
+# 모델 선택: MODEL_NAME=top30 or top50 (기본 top50)
+_model_name = os.environ.get("MODEL_NAME", "top50").lower()
+_checkpoint_dir = "checkpoints_top30" if _model_name == "top30" else "checkpoints_top50"
+CHECKPOINT_PATH   = ROOT / "models" / _checkpoint_dir / "best_gru_model.pt"
 MODEL_ASSET_PATH  = ROOT / "models" / "mediapipe" / "hand_landmarker.task"
+print(f"[AI Server] 사용 모델: {_model_name} ({CHECKPOINT_PATH})")
 
 THRESHOLD      = 0.7
 STABLE_FRAMES  = 8

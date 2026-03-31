@@ -54,13 +54,11 @@ const cacheTtlMs = Number(process.env.CACHE_TTL_MS || 30000);
 const responseCache = new Map();
 
 // ── CORS ───────────────────────────────────────────────────────────────────────
-// 코틀린 앱 및 모든 출처 허용 (배포 후 origin을 앱 도메인으로 제한 권장)
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── Python STT/TTS 서버 프록시 ─────────────────────────────────────────────────
-// Python Flask 서버(포트 5000)로 /tts, /stt, /voices, /docs 요청 프록시
+// ── Python STT/TTS 서버 프록시 (포트 5000) ────────────────────────────────────
 const PYTHON_SERVER_URL = process.env.PYTHON_SERVER_URL || "http://localhost:5000";
 const speechProxy = createProxyMiddleware({
   target: PYTHON_SERVER_URL,
@@ -71,8 +69,8 @@ app.use("/stt", speechProxy);
 app.use("/voices", speechProxy);
 app.use("/docs", speechProxy);
 
-// ── AI 추론 서버 프록시 (포트 5001) ────────────────────────────────────────────
-// Kotlin 앱 → POST /infer (프레임) → AI 서버 → 단어 감지 → Node.js /token 자동 전송
+// ── AI 추론 서버 프록시 (포트 5001) ──────────────────────────────────────────
+// Kotlin 앱 → POST /infer → AI 서버(수어 감지) → Node.js /token 자동 전송
 const AI_SERVER_URL = process.env.AI_SERVER_URL || "http://localhost:5001";
 const aiProxy = createProxyMiddleware({
   target: AI_SERVER_URL,
@@ -81,9 +79,8 @@ const aiProxy = createProxyMiddleware({
 app.use("/infer", aiProxy);
 
 // ── 세션 버퍼 ──────────────────────────────────────────────────────────────────
-// sessionId → { tokens: string[], timer: Timeout | null }
 const sessionBuffers = new Map();
-const BUFFER_FLUSH_MS = Number(process.env.BUFFER_FLUSH_MS || 2000); // 마지막 단어 후 2초 뒤 자동 번역
+const BUFFER_FLUSH_MS = Number(process.env.BUFFER_FLUSH_MS || 2000);
 
 function getOrCreateSession(sessionId) {
   if (!sessionBuffers.has(sessionId)) {
@@ -129,13 +126,42 @@ async function buildSentenceFromGlosses(glosses) {
   return { sentence, cached: false };
 }
 
+// ── Python TTS 호출 → 오디오 버퍼 반환 ──────────────────────────────────────
+function callPythonTtsBuffer(sentence) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ text: sentence, lang: "ko" });
+    const ttsUrl = new URL(`${PYTHON_SERVER_URL}/tts`);
+    const options = {
+      hostname: ttsUrl.hostname,
+      port: ttsUrl.port || 5000,
+      path: "/tts",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    };
+    const req = http.request(options, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 // ── HTTP Routes ────────────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
+
 // 수어 단어 → 문장 번역 → TTS 오디오 반환 (체인 엔드포인트)
-// POST /gloss-to-speech { glosses: ["person", "eat", "apple"] }
 app.post("/gloss-to-speech", async (req, res) => {
   const glosses = normalizeGlossInput(req.body.glosses);
   if (glosses.length === 0) {
@@ -151,7 +177,6 @@ app.post("/gloss-to-speech", async (req, res) => {
     return res.status(500).json({ error: "Failed to translate glosses." });
   }
 
-  // Python TTS 서버 호출
   const ttsBody = JSON.stringify({ text: sentence, lang: "ko" });
   const ttsUrl = new URL(`${PYTHON_SERVER_URL}/tts`);
   const options = {
@@ -171,7 +196,6 @@ app.post("/gloss-to-speech", async (req, res) => {
     }
     res.set("Content-Type", "audio/mpeg");
     res.set("X-Sentence", encodeURIComponent(sentence));
-    res.set("X-Glosses", glosses.join(","));
     ttsRes.pipe(res);
   });
 
@@ -184,17 +208,13 @@ app.post("/gloss-to-speech", async (req, res) => {
   ttsReq.end();
 });
 
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
-});
-
-// 기존 일괄 번역 엔드포인트 (유지)
+// 기존 일괄 번역 엔드포인트
 app.post("/translate", async (req, res) => {
   try {
     const glosses = normalizeGlossInput(req.body.glosses);
     if (glosses.length === 0) {
       return res.status(400).json({
-        error: "glosses is required. Send an array like ['person', 'eat', 'apple'] or a string."
+        error: "glosses is required."
       });
     }
 
@@ -213,7 +233,7 @@ app.post("/translate", async (req, res) => {
   }
 });
 
-// 단어 단위 버퍼 엔드포인트 - 코틀린 앱에서 단어가 인식될 때마다 호출
+// 단어 단위 버퍼 엔드포인트 - AI 서버에서 단어 감지 시 자동 호출
 // POST /token { sessionId: "...", token: "person" }
 app.post("/token", (req, res) => {
   const { sessionId, token } = req.body;
@@ -225,11 +245,16 @@ app.post("/token", (req, res) => {
   const session = getOrCreateSession(sessionId);
   session.tokens.push(String(token).trim());
 
-  // 기존 타이머 리셋 (마지막 단어 후 BUFFER_FLUSH_MS 뒤 자동 번역)
   if (session.timer) clearTimeout(session.timer);
   session.timer = setTimeout(() => {
     flushSession(sessionId);
   }, BUFFER_FLUSH_MS);
+
+  // WebSocket으로 현재 버퍼 상태 실시간 전송
+  const ws = wsClients.get(sessionId);
+  if (ws && ws.readyState === ws.OPEN) {
+    ws.send(JSON.stringify({ type: "buffered", tokens: session.tokens }));
+  }
 
   return res.json({
     sessionId,
@@ -238,8 +263,7 @@ app.post("/token", (req, res) => {
   });
 });
 
-// 즉시 번역 요청 - 버퍼를 바로 비우고 번역
-// POST /flush { sessionId: "..." }
+// 즉시 번역 요청
 app.post("/flush", async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) {
@@ -273,8 +297,6 @@ app.post("/flush", async (req, res) => {
   }
 });
 
-// 세션 버퍼 초기화
-// DELETE /session/:sessionId
 app.delete("/session/:sessionId", (req, res) => {
   clearSession(req.params.sessionId);
   res.json({ ok: true, sessionId: req.params.sessionId });
@@ -284,36 +306,9 @@ app.delete("/session/:sessionId", (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// sessionId → WebSocket 클라이언트 맵
 const wsClients = new Map();
 
-// Python TTS 호출 → 오디오 버퍼 반환
-function callPythonTtsBuffer(sentence) {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ text: sentence, lang: "ko" });
-    const ttsUrl = new URL(`${PYTHON_SERVER_URL}/tts`);
-    const options = {
-      hostname: ttsUrl.hostname,
-      port: ttsUrl.port || 5000,
-      path: "/tts",
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(body),
-      },
-    };
-    const req = http.request(options, (res) => {
-      const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
-      res.on("end", () => resolve(Buffer.concat(chunks)));
-    });
-    req.on("error", reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-// 타이머 만료 시 자동 번역 → TTS → WebSocket으로 실시간 푸시
+// 타이머 만료 시 자동 번역 → TTS → WebSocket으로 오디오 푸시
 async function flushSession(sessionId) {
   const session = sessionBuffers.get(sessionId);
   if (!session || session.tokens.length === 0) return;
@@ -327,7 +322,7 @@ async function flushSession(sessionId) {
     const result = await buildSentenceFromGlosses(glosses);
     const sentence = result.sentence;
 
-    // 1. 번역된 문장 먼저 전송
+    // 1. 번역 문장 먼저 전송
     if (ws && ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({
         type: "sentence",
@@ -376,7 +371,6 @@ wss.on("connection", (ws) => {
 
     const { type, sessionId, token, glosses } = msg;
 
-    // 세션 등록
     if (type === "join") {
       clientSessionId = sessionId;
       wsClients.set(sessionId, ws);
@@ -384,7 +378,6 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // 단어 한 개 수신
     if (type === "token") {
       if (!clientSessionId) {
         ws.send(JSON.stringify({ type: "error", error: "Send { type: 'join', sessionId } first." }));
@@ -400,7 +393,6 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // 즉시 번역
     if (type === "flush") {
       const sid = clientSessionId || sessionId;
       if (!sid) {
@@ -432,7 +424,6 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // 단어 배열 일괄 번역 (기존 방식)
     if (type === "translate") {
       const normalized = normalizeGlossInput(glosses);
       if (normalized.length === 0) {

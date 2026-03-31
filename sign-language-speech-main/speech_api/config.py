@@ -25,7 +25,8 @@ CONVERTIBLE_STT_EXTENSIONS = {
 }
 SUPPORTED_STT_EXTENSIONS = DIRECT_STT_EXTENSIONS | CONVERTIBLE_STT_EXTENSIONS
 
-TEMP_ROOT = Path(".runtime-temp")
+import tempfile
+TEMP_ROOT = Path(tempfile.gettempdir()) / "sign-speech-api"
 TEMP_ROOT.mkdir(exist_ok=True)
 
 MIN_REALTIME_CHUNK_SECONDS = 0.8
