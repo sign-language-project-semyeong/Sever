@@ -10,19 +10,42 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- 상단 연결 상태 -->
-    <TextView
-        android:id="@+id/tv_status"
-        android:layout_width="wrap_content"
+    <!-- 상단 오버레이: 연결 상태 + 타이머 -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
+        android:layout_gravity="top"
         android:layout_marginTop="32dp"
-        android:text="연결 중..."
-        android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        android:background="#99000000"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="5dp"/>
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp">
+
+        <!-- 연결 상태 -->
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="연결 중..."
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:background="#99000000"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="5dp"/>
+
+        <!-- 통화 시간 타이머 -->
+        <TextView
+            android:id="@+id/tv_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="00:00"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:background="#99000000"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="5dp"/>
+
+    </LinearLayout>
 
     <!-- 하단 번역 문장 + 버튼 -->
     <LinearLayout
@@ -32,6 +55,28 @@
         android:orientation="vertical"
         android:background="#CC000000"
         android:padding="20dp">
+
+        <!-- 손 감지 상태 -->
+        <TextView
+            android:id="@+id/tv_hand_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="손을 보여주세요"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp"
+            android:paddingBottom="4dp"/>
+
+        <!-- 인식 중인 단어 버퍼 -->
+        <TextView
+            android:id="@+id/tv_buffer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#CCCCCC"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:paddingBottom="8dp"/>
 
         <!-- 번역된 문장 표시 -->
         <TextView

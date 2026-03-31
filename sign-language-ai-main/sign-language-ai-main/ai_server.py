@@ -174,9 +174,12 @@ def infer():
     if not sid or not frame_b64:
         return jsonify({"error": "sessionId and frameData are required"}), 400
 
-    # 프레임 디코딩
+    # 프레임 디코딩 (최대 5MB 제한)
+    MAX_FRAME_BYTES = 5 * 1024 * 1024
     try:
         frame_bytes = base64.b64decode(frame_b64)
+        if len(frame_bytes) > MAX_FRAME_BYTES:
+            return jsonify({"error": "frameData too large (max 5MB)"}), 413
         frame_arr   = np.frombuffer(frame_bytes, dtype=np.uint8)
         frame       = cv2.imdecode(frame_arr, cv2.IMREAD_COLOR)
         if frame is None:

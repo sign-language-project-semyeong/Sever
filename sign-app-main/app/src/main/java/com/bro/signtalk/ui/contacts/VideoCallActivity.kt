@@ -7,8 +7,10 @@ import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.RecognizerIntent
 import android.util.Log
+import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
@@ -53,18 +55,22 @@ class VideoCallActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var tvSentence: TextView
     private lateinit var tvStatus: TextView
+    private lateinit var tvTimer: TextView
+    private lateinit var tvBuffer: TextView
+    private lateinit var tvHandStatus: TextView
     private lateinit var btnMic: ImageButton
     private lateinit var btnHangup: ImageButton
 
     // ── 카메라 ─────────────────────────────────────────────────────────────────
     private lateinit var cameraExecutor: ExecutorService
     private var lastFrameSentMs = 0L
-    private val FRAME_INTERVAL_MS = 300L  // 약 3fps
+    private val FRAME_INTERVAL_MS = 100L  // 10fps
 
     // ── 네트워크 ────────────────────────────────────────────────────────────────
     private val sessionId = UUID.randomUUID().toString()
     private var webSocket: WebSocket? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var reconnectDelayMs = 3000L
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -74,6 +80,18 @@ class VideoCallActivity : AppCompatActivity() {
 
     // ── 오디오 재생 ─────────────────────────────────────────────────────────────
     private var mediaPlayer: MediaPlayer? = null
+
+    // ── 통화 타이머 ─────────────────────────────────────────────────────────────
+    private var callStartTime = 0L
+    private val timerRunnable = object : Runnable {
+        override fun run() {
+            val elapsed = SystemClock.elapsedRealtime() - callStartTime
+            val minutes = (elapsed / 60000).toInt()
+            val seconds = ((elapsed % 60000) / 1000).toInt()
+            tvTimer.text = "%02d:%02d".format(minutes, seconds)
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
 
     // ── 음성 인식 (STT) ─────────────────────────────────────────────────────────
     private val speechLauncher = registerForActivityResult(
@@ -106,13 +124,23 @@ class VideoCallActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_call)
 
-        previewView = findViewById(R.id.preview_view)
-        tvSentence  = findViewById(R.id.tv_sentence)
-        tvStatus    = findViewById(R.id.tv_status)
-        btnMic      = findViewById(R.id.btn_mic)
-        btnHangup   = findViewById(R.id.btn_hangup)
+        // 화면 항상 켜짐
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        previewView   = findViewById(R.id.preview_view)
+        tvSentence    = findViewById(R.id.tv_sentence)
+        tvStatus      = findViewById(R.id.tv_status)
+        tvTimer       = findViewById(R.id.tv_timer)
+        tvBuffer      = findViewById(R.id.tv_buffer)
+        tvHandStatus  = findViewById(R.id.tv_hand_status)
+        btnMic        = findViewById(R.id.btn_mic)
+        btnHangup     = findViewById(R.id.btn_hangup)
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+        // 통화 타이머 시작
+        callStartTime = SystemClock.elapsedRealtime()
+        mainHandler.post(timerRunnable)
 
         connectWebSocket()
         checkPermissionsAndStartCamera()
@@ -123,9 +151,11 @@ class VideoCallActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacksAndMessages(null)
         webSocket?.close(1000, "Activity destroyed")
         cameraExecutor.shutdown()
         mediaPlayer?.release()
+        mediaPlayer = null
         httpClient.dispatcher.executorService.shutdown()
     }
 
@@ -136,6 +166,7 @@ class VideoCallActivity : AppCompatActivity() {
         webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                reconnectDelayMs = 3000L  // 재연결 delay 리셋
                 webSocket.send(JSONObject().apply {
                     put("type", "join")
                     put("sessionId", sessionId)
@@ -154,7 +185,10 @@ class VideoCallActivity : AppCompatActivity() {
                         // 번역된 문장 수신
                         "sentence" -> {
                             val sentence = json.getString("sentence")
-                            mainHandler.post { tvSentence.text = "🤟 $sentence" }
+                            mainHandler.post {
+                                tvSentence.text = "🤟 $sentence"
+                                tvBuffer.text = ""
+                            }
                         }
 
                         // 번역 + TTS 오디오 수신
@@ -163,11 +197,22 @@ class VideoCallActivity : AppCompatActivity() {
                             val sentence = json.optString("sentence", "")
                             mainHandler.post {
                                 if (sentence.isNotEmpty()) tvSentence.text = "🤟 $sentence"
+                                tvBuffer.text = ""
                                 playAudio(audioBase64)
                             }
                         }
 
-                        "buffered" -> Log.d(TAG, "버퍼: ${json.optJSONArray("tokens")}")
+                        // 인식 단어 버퍼 표시
+                        "buffered" -> {
+                            val tokensArray = json.optJSONArray("tokens")
+                            if (tokensArray != null) {
+                                val tokens = (0 until tokensArray.length())
+                                    .map { tokensArray.getString(it) }
+                                mainHandler.post {
+                                    tvBuffer.text = tokens.joinToString(" / ")
+                                }
+                            }
+                        }
 
                         "error" -> Log.e(TAG, "서버 오류: ${json.optString("error")}")
                     }
@@ -178,8 +223,10 @@ class VideoCallActivity : AppCompatActivity() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket 끊김: ${t.message}")
-                updateStatus("🔴 연결 끊김 - 재연결 중...")
-                mainHandler.postDelayed({ connectWebSocket() }, 3000)
+                updateStatus("🔴 연결 끊김 - ${reconnectDelayMs / 1000}초 후 재연결...")
+                val delay = reconnectDelayMs
+                reconnectDelayMs = minOf(reconnectDelayMs * 2, 30_000L)
+                mainHandler.postDelayed({ connectWebSocket() }, delay)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -245,7 +292,7 @@ class VideoCallActivity : AppCompatActivity() {
         try {
             val bitmap = imageProxy.toBitmap()
             val outputStream = ByteArrayOutputStream()
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 50, outputStream)
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
             val base64Frame = android.util.Base64.encodeToString(
                 outputStream.toByteArray(), android.util.Base64.NO_WRAP
             )
@@ -253,7 +300,7 @@ class VideoCallActivity : AppCompatActivity() {
             val body = JSONObject().apply {
                 put("sessionId", sessionId)
                 put("frameData", base64Frame)
-                put("fps", 3.0)
+                put("fps", 10.0)
             }.toString()
 
             val request = Request.Builder()
@@ -262,7 +309,19 @@ class VideoCallActivity : AppCompatActivity() {
                 .build()
 
             httpClient.newCall(request).enqueue(object : Callback {
-                override fun onResponse(call: Call, response: Response) { response.close() }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val json = JSONObject(response.body?.string() ?: return)
+                        val hasHands = json.optBoolean("hasHands", false)
+                        mainHandler.post {
+                            tvHandStatus.text = if (hasHands) "✋ 감지 중" else "손을 보여주세요"
+                        }
+                    } catch (e: Exception) {
+                        // 응답 파싱 실패는 무시
+                    } finally {
+                        response.close()
+                    }
+                }
                 override fun onFailure(call: Call, e: java.io.IOException) {
                     Log.w(TAG, "Infer 요청 실패: ${e.message}")
                 }
@@ -286,7 +345,7 @@ class VideoCallActivity : AppCompatActivity() {
                 setDataSource(tempFile.absolutePath)
                 prepare()
                 start()
-                setOnCompletionListener { release() }
+                setOnCompletionListener { release(); mediaPlayer = null }
             }
         } catch (e: Exception) {
             Log.e(TAG, "오디오 재생 오류: ${e.message}")

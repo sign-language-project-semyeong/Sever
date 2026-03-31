@@ -1,0 +1,7 @@
+dataset_name: nikl
+video_root: data/raw/videos
+label_root: data/raw/labels
+manifest_csv: data/processed/manifests/manifest.csv
+landmark_root: data/processed/landmarks
+label_column: label
+max_len: 30

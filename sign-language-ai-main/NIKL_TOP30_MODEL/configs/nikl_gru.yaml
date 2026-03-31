@@ -1,0 +1,15 @@
+manifest_csv: data/processed/manifests/manifest.csv
+landmark_root: data/processed/landmarks
+label_column: label
+batch_size: 8
+num_epochs: 10
+learning_rate: 0.001
+weight_decay: 0.0001
+label_smoothing: 0.05
+hidden_size: 128
+num_layers: 2
+dropout: 0.2
+max_len: 30
+checkpoint_dir: models/checkpoints_nikl
+class_weighting: true
+model_type: gru
