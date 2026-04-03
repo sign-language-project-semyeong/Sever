@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/menu_delete"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:text="🗑️ 연락처 삭제"
+        android:gravity="center_vertical"
+        android:textColor="#FF0000"
+        android:textSize="18sp" />
+
+    <TextView
+        android:id="@+id/menu_favorite"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:text="⭐ 즐겨찾기 추가/해제"
+        android:gravity="center_vertical"
+        android:textSize="18sp" />
+</LinearLayout>

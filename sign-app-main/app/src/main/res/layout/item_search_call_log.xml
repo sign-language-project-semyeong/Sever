@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="16dp"
+    android:background="?android:attr/selectableItemBackground">
+
+    <TextView
+        android:id="@+id/tv_call_log_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="최근 통화 내역"
+        android:textColor="#555555"
+        android:textSize="14sp" />
+</LinearLayout>

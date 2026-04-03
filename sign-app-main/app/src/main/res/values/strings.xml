@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">sign-app</string>
+
+    <string name="accessibility_description">SignTalk의 쌈@뽕한 통화 지원을 위한 접근성 서비스다 이말이야! ㅇㅇ.</string>
+</resources>

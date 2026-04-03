@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/contacts_recycler"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <com.bro.signtalk.ui.custom.SideIndexView
+        android:id="@+id/side_index_view"
+        android:layout_width="26dp"
+        android:layout_height="wrap_content"
+        android:layout_alignParentEnd="true"
+        android:layout_centerVertical="true"
+        android:layout_marginEnd="4dp"
+        android:paddingVertical="10dp"
+
+    android:background="@drawable/bg_side_index"
+
+    android:elevation="50dp"
+    android:alpha="0"
+    android:visibility="invisible" />
+
+    <TextView
+        android:id="@+id/tv_index_overlay"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:layout_centerInParent="true"
+        android:background="@drawable/bg_index_overlay"
+        android:gravity="center"
+        android:textColor="#FFFFFF"
+        android:textSize="45sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        android:elevation="20dp" />
+
+</RelativeLayout>

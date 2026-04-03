@@ -60,23 +60,46 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ── Python STT/TTS 서버 프록시 (포트 5000) ────────────────────────────────────
 const PYTHON_SERVER_URL = process.env.PYTHON_SERVER_URL || "http://localhost:5000";
-const speechProxy = createProxyMiddleware({
-  target: PYTHON_SERVER_URL,
-  changeOrigin: true,
-});
-app.use("/tts", speechProxy);
-app.use("/stt", speechProxy);
-app.use("/voices", speechProxy);
-app.use("/docs", speechProxy);
+
+async function forwardToPython(req, res, path) {
+  try {
+    const isJson = req.headers["content-type"]?.includes("application/json");
+    const fetchRes = await fetch(`${PYTHON_SERVER_URL}${path}`, {
+      method: req.method,
+      headers: { "Content-Type": req.headers["content-type"] || "application/json" },
+      body: isJson ? JSON.stringify(req.body) : undefined,
+    });
+    const contentType = fetchRes.headers.get("content-type") || "";
+    res.status(fetchRes.status);
+    res.set("Content-Type", contentType);
+    const buf = await fetchRes.arrayBuffer();
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+app.post("/tts", (req, res) => forwardToPython(req, res, "/tts"));
+app.post("/stt", (req, res) => forwardToPython(req, res, "/stt"));
+app.get("/voices", (req, res) => forwardToPython(req, res, "/voices"));
+app.get("/docs", (req, res) => forwardToPython(req, res, "/docs"));
 
 // ── AI 추론 서버 프록시 (포트 5001) ──────────────────────────────────────────
 // Kotlin 앱 → POST /infer → AI 서버(수어 감지) → Node.js /token 자동 전송
 const AI_SERVER_URL = process.env.AI_SERVER_URL || "http://localhost:5001";
-const aiProxy = createProxyMiddleware({
-  target: AI_SERVER_URL,
-  changeOrigin: true,
+app.post("/infer", async (req, res) => {
+  try {
+    const response = await fetch(`${AI_SERVER_URL}/infer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
-app.use("/infer", aiProxy);
 
 // ── 세션 버퍼 ──────────────────────────────────────────────────────────────────
 const sessionBuffers = new Map();

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
+
+
+
+
+    <ImageButton
+        android:id="@+id/btn_add_contact"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:layout_marginEnd="82dp"
+        android:layout_marginTop="15dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="연락처 추가"
+        android:src="@android:drawable/ic_input_add"
+        app:tint="#000000" />
+
+    <View
+        android:id="@+id/view_display_bg"
+        android:layout_width="match_parent"
+        android:paddingVertical="4dp"
+        android:layout_height="270dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="70dp"
+        android:layout_marginHorizontal="15dp"
+        android:background="@drawable/view_display_bg" />
+
+    <EditText
+        android:id="@+id/number_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="180dp"
+        android:background="@null"
+        android:gravity="center"
+        android:hint="010-0000-0000"
+        android:textColorHint="#474747"
+        android:textColor="#ffffff"
+        android:textSize="36sp"
+        android:textIsSelectable="true" />
+
+
+    <GridLayout
+        android:id="@+id/keypad_grid"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@+id/bottom_action_bar"
+        android:layout_marginHorizontal="40dp"
+
+
+        android:layout_marginBottom="1dp"
+        android:columnCount="3"
+        android:rowCount="4"
+        android:paddingTop="380dp">
+
+        <Button
+            android:id="@+id/btn_1"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="1" />
+
+        <Button
+            android:id="@+id/btn_2"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginVertical="4dp"
+            android:text="2" />
+
+        <Button
+            android:id="@+id/btn_3"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="3" />
+
+        <Button
+            android:id="@+id/btn_4"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="4" />
+
+        <Button
+            android:id="@+id/btn_5"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginVertical="4dp"
+            android:text="5" />
+
+        <Button
+            android:id="@+id/btn_6"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="6" />
+
+        <Button
+            android:id="@+id/btn_7"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="7" />
+
+        <Button
+            android:id="@+id/btn_8"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginVertical="4dp"
+            android:text="8" />
+
+        <Button
+            android:id="@+id/btn_9"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="9" />
+
+        <Button
+            android:id="@+id/btn_star"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="*" />
+
+        <Button
+            android:id="@+id/btn_0"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginVertical="4dp"
+            android:text="0" />
+
+        <Button
+            android:id="@+id/btn_sharp"
+            style="@style/Widget.SignTalk.KeypadButton"
+            android:text="#" />
+    </GridLayout>
+
+    <LinearLayout
+        android:id="@+id/bottom_action_bar"
+        android:layout_width="match_parent"
+        android:layout_height="100dp"
+        android:layout_alignParentBottom="true"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/btn_video_call"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:layout_marginEnd="20dp"
+            android:visibility="invisible"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/presence_video_online"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            app:color="#2E2D2DFF"
+            app:tint="#000000" /> <com.google.android.material.floatingactionbutton.FloatingActionButton
+
+        android:id="@+id/btn_call"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:backgroundTint="#000000"
+        android:src="@android:drawable/ic_menu_call"
+        app:fabCustomSize="70dp"
+        app:maxImageSize="35dp"
+        app:tint="#FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_delete"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:layout_marginStart="20dp"
+            android:visibility="invisible"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_input_delete"
+            android:scaleType="fitCenter"
+            android:padding="15dp"
+            app:color="#2E2D2DFF"
+            app:tint="#000000" /> </LinearLayout>
+</RelativeLayout>

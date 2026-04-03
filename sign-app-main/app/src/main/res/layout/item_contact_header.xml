@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="180dp"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:gravity="bottom"
+    android:paddingBottom="30dp"
+    android:background="#F8F0FF">
+
+    <TextView
+        android:id="@+id/tv_contact_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="연락처"
+        android:textSize="36sp"
+        android:textStyle="bold"
+        android:textColor="#000000" />
+</LinearLayout>

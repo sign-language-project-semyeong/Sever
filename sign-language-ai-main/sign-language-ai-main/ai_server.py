@@ -35,18 +35,27 @@ from src.preprocess.extract_landmarks import HandLandmarkExtractor
 import os
 NODE_SERVER_URL   = os.environ.get("NODE_SERVER_URL", "http://localhost:3000")
 
-# 모델 선택: MODEL_NAME=top30 or top50 (기본 top50)
+# 모델 선택: MODEL_NAME=top30, top50, demo / 또는 CHECKPOINT_PATH 직접 지정
 _model_name = os.environ.get("MODEL_NAME", "top50").lower()
-_checkpoint_dir = "checkpoints_top30" if _model_name == "top30" else "checkpoints_top50"
-CHECKPOINT_PATH   = ROOT / "models" / _checkpoint_dir / "best_gru_model.pt"
+_checkpoint_override = os.environ.get("CHECKPOINT_PATH", "")
+
+if _checkpoint_override:
+    CHECKPOINT_PATH = Path(_checkpoint_override)
+elif _model_name == "demo":
+    CHECKPOINT_PATH = ROOT.parent.parent / "demo_gesture_2026-03-31_v1" / "models" / "best_gru_model.pt"
+elif _model_name == "top30":
+    CHECKPOINT_PATH = ROOT / "models" / "checkpoints_top30" / "best_gru_model.pt"
+else:
+    CHECKPOINT_PATH = ROOT / "models" / "checkpoints_top50" / "best_gru_model.pt"
+
 MODEL_ASSET_PATH  = ROOT / "models" / "mediapipe" / "hand_landmarker.task"
 print(f"[AI Server] 사용 모델: {_model_name} ({CHECKPOINT_PATH})")
 
-THRESHOLD      = 0.7
-STABLE_FRAMES  = 8
-VOTE_WINDOW    = 12
-COOLDOWN_FRAMES = 12
-MIN_TOKEN_GAP  = 0.8   # 같은 단어 재등록 최소 간격(초)
+THRESHOLD      = 0.5   # 0.7 → 0.5 (더 넓게 인식)
+STABLE_FRAMES  = 5    # 8 → 5 (더 빠르게 확정)
+VOTE_WINDOW    = 10
+COOLDOWN_FRAMES = 10
+MIN_TOKEN_GAP  = 1.5   # 같은 단어 재등록 최소 간격(초)
 
 app = Flask(__name__)
 CORS(app)
@@ -211,6 +220,11 @@ def infer():
 
         if has_hands and top_score >= THRESHOLD:
             s["recent_labels"].append(top_label)
+            print(f"[INFER] OK {top_label} ({top_score:.2f}) stable={s['stable_count']} cool={s['cooldown_count']}", flush=True)
+        elif has_hands:
+            print(f"[INFER] LOW {top_label} ({top_score:.2f}) < threshold {THRESHOLD}", flush=True)
+            if s["recent_labels"]:
+                s["recent_labels"].clear()
         elif s["recent_labels"]:
             s["recent_labels"].clear()
 

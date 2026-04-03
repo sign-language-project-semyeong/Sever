@@ -46,14 +46,21 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
 
-    // 네트워크 (OkHttp WebSocket + HTTP)
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // [핵심] 이거 하나면 충분하다 이말이야! 중복된 com.github...은 지워버려!
+    implementation("io.github.webrtc-sdk:android:125.6422.06.1")
+    implementation("com.google.android.material:material:1.9.0")
+// 최신 버전으로 기강 잡아라!
+    implementation("com.github.yalantis:ucrop:2.2.8")
 
-    // CameraX (수어 인식용 카메라 프레임 캡처)
-    implementation("androidx.camera:camera-core:1.3.0")
-    implementation("androidx.camera:camera-camera2:1.3.0")
-    implementation("androidx.camera:camera-lifecycle:1.3.0")
-    implementation("androidx.camera:camera-view:1.3.0")
+    // CameraX
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+    // CameraX ListenableFuture 지원
+    implementation("com.google.guava:guava:31.0.1-android")
+    // OkHttp (WebSocket + HTTP)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -1,0 +1,44 @@
+<resources>
+    <style name="Base.Theme.Signapp" parent="Theme.Material3.Light.NoActionBar">
+    </style>
+
+    <style name="CustomMaterialCalendar" parent="ThemeOverlay.MaterialComponents.MaterialCalendar">
+        <item name="colorPrimary">#E1BEE7</item>
+        <item name="colorOnPrimary">#4A148C</item>
+
+        <item name="colorOnSurface">#E6000000</item> <item name="dayTodayStyle">@style/CustomCalendarTodayStyle</item>
+        <item name="dayInvalidStyle">@style/CustomCalendarInvalidStyle</item>
+    </style>
+
+    <style name="CustomCalendarTodayStyle">
+        <item name="itemShapeAppearanceOverlay">@style/CircleStyle</item>
+        <item name="itemStrokeColor">#8E24AA</item>
+        <item name="itemStrokeWidth">2dp</item>
+        <item name="itemTextColor">#8E24AA</item>
+    </style>
+
+    <style name="CustomCalendarInvalidStyle">
+        <item name="itemTextColor">#22FF0000</item>
+        <item name="itemShapeAppearanceOverlay">@style/CircleStyle</item>
+    </style>
+
+    <style name="CircleStyle">
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <style name="Widget.SignTalk.KeypadButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:background">@drawable/btn_keypad_border</item>
+        <item name="backgroundTint">@null</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minHeight">50dp</item>
+        <item name="android:minWidth">600dp</item>
+        <item name="android:layout_width">2dp</item>
+        <item name="android:layout_columnWeight">1</item>
+        <item name="android:layout_margin">4dp</item>
+        <item name="android:textSize">35sp</item>
+        <item name="android:textColor">#000000</item>
+        <item name="android:gravity">center</item>
+    </style>
+</resources>
