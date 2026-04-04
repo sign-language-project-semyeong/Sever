@@ -54,15 +54,17 @@
             app:scaleType="fillCenter" />
     </LinearLayout>
 
-    <!-- ── 채팅 영역 (STT + 내 문장) ── -->
+    <!-- ── 채팅 영역 ── -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_chat"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:padding="10dp"
+        android:background="#F9F9F9"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:clipToPadding="false"
         app:layout_constraintTop_toBottomOf="@id/layout_top_bar"
-        app:layout_constraintBottom_toTopOf="@id/layout_word_area"
+        app:layout_constraintBottom_toTopOf="@id/layout_controller"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
@@ -78,6 +80,7 @@
         android:paddingTop="10dp"
         android:paddingBottom="8dp"
         android:elevation="4dp"
+        android:visibility="gone"
         app:layout_constraintBottom_toTopOf="@id/layout_controller">
 
         <TextView

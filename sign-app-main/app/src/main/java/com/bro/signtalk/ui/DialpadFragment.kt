@@ -144,6 +144,7 @@ class DialpadFragment : Fragment() {
                 showToast("번호부터 입력해라 브@로! 팍씨!")
             }
         }
+
     }
 
     // [쫀득] 단축번호 비어있을 때 띄우는 찰진 다이얼로그다 이말이야!

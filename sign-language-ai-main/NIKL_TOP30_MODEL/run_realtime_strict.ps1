@@ -8,4 +8,3 @@ python -m src.infer.realtime_infer `
   --vote_window 10 `
   --cooldown_frames 8 `
   --mirror
-

@@ -331,6 +331,16 @@ const wss = new WebSocketServer({ server });
 
 const wsClients = new Map();
 
+// 연결된 모든 청취자(listener-*)에게 메시지 브로드캐스트
+function broadcastToListeners(payload) {
+  const data = JSON.stringify(payload);
+  for (const [sid, client] of wsClients.entries()) {
+    if (sid.startsWith("listener-") && client.readyState === client.OPEN) {
+      client.send(data);
+    }
+  }
+}
+
 // 타이머 만료 시 자동 번역 → TTS → WebSocket으로 오디오 푸시
 async function flushSession(sessionId) {
   const session = sessionBuffers.get(sessionId);
@@ -345,35 +355,28 @@ async function flushSession(sessionId) {
     const result = await buildSentenceFromGlosses(glosses);
     const sentence = result.sentence;
 
-    // 1. 번역 문장 먼저 전송
-    if (ws && ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({
-        type: "sentence",
-        sessionId,
-        glosses,
-        sentence,
-        cached: result.cached,
-        model: defaultModel
-      }));
-    }
+    const sentencePayload = {
+      type: "sentence", sessionId, glosses, sentence,
+      cached: result.cached, model: defaultModel
+    };
 
-    // 2. TTS 오디오 생성 후 전송
+    // 1. 번역 문장 → 수어 사용자 앱 + 모든 청취자
+    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(sentencePayload));
+    broadcastToListeners(sentencePayload);
+
+    // 2. TTS 오디오 → 수어 사용자 앱 + 모든 청취자
     try {
       const audioBuffer = await callPythonTtsBuffer(sentence);
-      if (ws && ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({
-          type: "audio",
-          sessionId,
-          sentence,
-          audio: audioBuffer.toString("base64"),
-          mimeType: "audio/mpeg"
-        }));
-      }
+      const audioPayload = {
+        type: "audio", sessionId, sentence,
+        audio: audioBuffer.toString("base64"), mimeType: "audio/mpeg"
+      };
+      if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(audioPayload));
+      broadcastToListeners(audioPayload);
     } catch (ttsError) {
       console.error("TTS error:", ttsError);
-      if (ws && ws.readyState === ws.OPEN) {
+      if (ws && ws.readyState === ws.OPEN)
         ws.send(JSON.stringify({ type: "error", error: "TTS failed.", sentence }));
-      }
     }
   } catch (error) {
     console.error("Auto-flush error:", error);
@@ -398,6 +401,16 @@ wss.on("connection", (ws) => {
       clientSessionId = sessionId;
       wsClients.set(sessionId, ws);
       ws.send(JSON.stringify({ type: "joined", sessionId }));
+      return;
+    }
+
+    if (type === "stt") {
+      // 보낸 사람 제외한 모든 세션에 릴레이
+      for (const [sid, client] of wsClients.entries()) {
+        if (sid !== clientSessionId && client.readyState === client.OPEN) {
+          client.send(JSON.stringify({ type: "stt", text: msg.text, from: clientSessionId }));
+        }
+      }
       return;
     }
 

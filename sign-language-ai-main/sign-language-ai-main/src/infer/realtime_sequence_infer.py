@@ -48,7 +48,6 @@ def load_model(checkpoint_path: Path, device: torch.device):
     input_size = int(checkpoint.get("input_size", 126))
     return model, idx2label, blank_idx, input_size
 
-
 def greedy_decode(logits: torch.Tensor, blank_idx: int, idx2label: dict[int, str]) -> list[str]:
     token_ids = logits.argmax(dim=-1)[0].cpu().tolist()
     collapsed: list[int] = []

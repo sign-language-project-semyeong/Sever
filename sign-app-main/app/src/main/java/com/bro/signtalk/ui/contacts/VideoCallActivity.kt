@@ -14,13 +14,12 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaPlayer
 import android.net.Uri
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.ContactsContract
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.util.Base64
 import android.util.Log
 import android.view.Gravity
@@ -74,13 +73,15 @@ class VideoCallActivity : AppCompatActivity() {
     private var isSpeakerOn = true
     private var mediaPlayer: MediaPlayer? = null
     private var isPlayingTts = false
+    private var tts: TextToSpeech? = null
+    private var listenerWs: WebSocket? = null
 
     // ── 카메라 (CameraX) ──────────────────────────────────────────────────────
     private var cameraFacing = CameraSelector.LENS_FACING_FRONT
     private var cameraProvider: ProcessCameraProvider? = null
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var frameCounter = 0
-    private val INFER_EVERY = 6   // 30fps 카메라에서 5fps로 추론
+    private val INFER_EVERY = 3   // 30fps 카메라에서 10fps로 추론
 
     // ── 네트워크 ──────────────────────────────────────────────────────────────
     private val httpClient = OkHttpClient.Builder()
@@ -91,8 +92,6 @@ class VideoCallActivity : AppCompatActivity() {
     private var webSocket: WebSocket? = null
     private val sessionId = UUID.randomUUID().toString()
 
-    // ── STT ───────────────────────────────────────────────────────────────────
-    private var speechRecognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // ── UI ────────────────────────────────────────────────────────────────────
@@ -131,7 +130,6 @@ class VideoCallActivity : AppCompatActivity() {
         setContentView(R.layout.activity_video_call)
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        setSpeakerphone(true)
 
         // 발신 번호 표시
         val number = intent.getStringExtra("receiver_phone") ?: ""
@@ -168,6 +166,21 @@ class VideoCallActivity : AppCompatActivity() {
 
         // 서버 연결 상태 확인
         checkServerHealth()
+
+        // 상대방 문장 수신용 Android TTS 초기화
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.KOREAN
+                tts?.setSpeechRate(0.85f)
+                tts?.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+            }
+        }
+        connectListenerWebSocket()
     }
 
     // ── RecyclerView 세팅 ─────────────────────────────────────────────────────
@@ -192,6 +205,7 @@ class VideoCallActivity : AppCompatActivity() {
         btnMute.setOnClickListener {
             isMuted = !isMuted
             audioManager.isMicrophoneMute = isMuted
+            SignCallService.instance?.setMuted(isMuted)
             (it as ImageButton).alpha = if (isMuted) 1.0f else 0.4f
         }
 
@@ -223,11 +237,14 @@ class VideoCallActivity : AppCompatActivity() {
     private fun onCallConnected() {
         if (callConnectedFlag) return   // 중복 호출 방지
         callConnectedFlag = true
+        // 통화 연결 후 올바른 순서로 오디오 설정 (에코 방지)
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        audioManager.isMicrophoneMute = false
+        setSpeakerphone(true)
         runOnUiThread {
             findViewById<View>(R.id.layout_camera_loading).visibility = View.GONE
         }
         startCamera()
-        startStt()
         Log.d(TAG, "수어 통화 화면 활성화 완료")
     }
 
@@ -316,6 +333,80 @@ class VideoCallActivity : AppCompatActivity() {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // 리스너 WebSocket (상대방 문장 수신 → 내 폰 TTS 재생)
+    // ─────────────────────────────────────────────────────────────────────────
+    private fun connectListenerWebSocket() {
+        val request = Request.Builder().url(NetworkConfig.WS_URL).build()
+        listenerWs = httpClient.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                webSocket.send("""{"type":"join","sessionId":"listener-$sessionId"}""")
+                Log.d(TAG, "리스너 WebSocket 연결 완료")
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val json = JSONObject(text)
+                    val originSession = json.optString("sessionId")
+                    val isFromOther = originSession != sessionId
+
+                    when (json.optString("type")) {
+                        "sentence" -> {
+                            val sentence = json.optString("sentence")
+                            if (sentence.isNotEmpty() && isFromOther) {
+                                runOnUiThread { addChatMessage(sentence, isMe = false) }
+                            }
+                        }
+                        "audio" -> {
+                            val audioB64 = json.optString("audio")
+                            if (audioB64.isNotEmpty() && isFromOther) {
+                                playReceivedAudio(audioB64)
+                            }
+                        }
+                    }
+                } catch (e: Exception) { }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.e(TAG, "리스너 WS 실패: ${t.message}, 3초 후 재연결")
+                mainHandler.postDelayed({ connectListenerWebSocket() }, 3000)
+            }
+        })
+    }
+
+    // 상대방 문장을 내 폰 스피커/이어폰으로 읽어주기
+    private fun speakReceivedSentence(sentence: String) {
+        tts?.speak(sentence, TextToSpeech.QUEUE_FLUSH, null, "incoming_tts")
+        Log.d(TAG, "상대방 TTS 재생: $sentence")
+    }
+
+    // 서버에서 받은 base64 MP3를 STREAM_ALARM으로 재생 (통화 중에도 들림)
+    private fun playReceivedAudio(base64Audio: String) {
+        mainHandler.post {
+            try {
+                val bytes = Base64.decode(base64Audio, Base64.DEFAULT)
+                val tempFile = File.createTempFile("recv_tts_", ".mp3", cacheDir)
+                tempFile.writeBytes(bytes)
+
+                mediaPlayer?.release()
+                mediaPlayer = MediaPlayer().apply {
+                    @Suppress("DEPRECATION")
+                    setAudioStreamType(AudioManager.STREAM_ALARM)
+                    setDataSource(tempFile.absolutePath)
+                    prepare()
+                    start()
+                    setOnCompletionListener {
+                        tempFile.delete()
+                        release()
+                    }
+                }
+                Log.d(TAG, "상대방 오디오 재생 (${bytes.size} bytes)")
+            } catch (e: Exception) {
+                Log.e(TAG, "상대방 오디오 재생 오류: ${e.message}")
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // CameraX + 수어 추론 (AI 서버 POST /infer)
     // ─────────────────────────────────────────────────────────────────────────
     private fun startCamera() {
@@ -366,9 +457,9 @@ class VideoCallActivity : AppCompatActivity() {
             imageProxy.close()
 
             // 320x240으로 축소 → JPEG 70% 압축 (전송 속도 최적화)
-            val scaled = Bitmap.createScaledBitmap(bitmap, 320, 240, false)
+            val scaled = Bitmap.createScaledBitmap(bitmap, 224, 224, false)
             val baos = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 70, baos)
+            scaled.compress(Bitmap.CompressFormat.JPEG, 60, baos)
             val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
 
             val bodyJson = """{"sessionId":"$sessionId","frameData":"$b64","fps":5}"""
@@ -406,167 +497,58 @@ class VideoCallActivity : AppCompatActivity() {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // STT (상대방 목소리 → 채팅 텍스트)
-    // ─────────────────────────────────────────────────────────────────────────
-    private fun startStt() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Log.w(TAG, "이 기기에서 STT를 지원하지 않음")
-            return
-        }
-        speechRecognizer?.destroy()
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-
-            override fun onResults(results: Bundle?) {
-                val text = results
-                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    ?.firstOrNull()
-                    ?: ""
-                if (text.isNotEmpty()) {
-                    Log.d(TAG, "STT 결과: $text")
-                    runOnUiThread { addChatMessage(text, isMe = false) }
-                }
-                // TTS 재생 중이 아니면 계속 듣기
-                if (!isPlayingTts) listenStt()
-            }
-
-            override fun onPartialResults(partial: Bundle?) {
-                // 부분 결과는 표시 안 함 (노이즈 많음)
-            }
-
-            override fun onError(error: Int) {
-                // NO_MATCH(7), CLIENT(5) 같은 일반 오류는 그냥 재시작
-                if (!isPlayingTts) {
-                    mainHandler.postDelayed({ listenStt() }, 300)
-                }
-            }
-        })
-        listenStt()
-    }
-
-    private fun listenStt() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300L)
-        }
-        try {
-            speechRecognizer?.startListening(intent)
-        } catch (e: Exception) {
-            Log.e(TAG, "STT 시작 오류: ${e.message}")
-        }
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // TTS 오디오 재생 (서버에서 받은 base64 MP3)
-    // MP3 → PCM 디코딩 후 AudioTrack(STREAM_VOICE_CALL)으로 전화 업링크에 직접 주입
-    // → 상대방에게 TTS 음성이 들림
+    // STREAM_ALARM 으로 스피커 재생 → AEC 레퍼런스에서 제외
+    // → 마이크가 TTS 소리를 집음해서 상대방에게 전달
     // ─────────────────────────────────────────────────────────────────────────
     private fun playTtsAudio(base64Audio: String) {
-        isPlayingTts = true
-        speechRecognizer?.stopListening()
-        audioManager.isMicrophoneMute = false
-
-        cameraExecutor.execute {
-            var audioTrack: AudioTrack? = null
-            var extractor: MediaExtractor? = null
-            var codec: MediaCodec? = null
-            val tempFile = File.createTempFile("tts_out_", ".mp3", cacheDir)
+        mainHandler.post {
             try {
                 val bytes = Base64.decode(base64Audio, Base64.DEFAULT)
+                val tempFile = File.createTempFile("tts_out_", ".mp3", cacheDir)
                 tempFile.writeBytes(bytes)
 
-                // ── MP3 → PCM16 디코딩 ───────────────────────────────────────
-                extractor = MediaExtractor().also { it.setDataSource(tempFile.absolutePath) }
-                var audioTrackIdx = -1
-                var format: MediaFormat? = null
-                for (i in 0 until extractor.trackCount) {
-                    val f = extractor.getTrackFormat(i)
-                    if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                        audioTrackIdx = i; format = f; break
-                    }
-                }
-                if (audioTrackIdx < 0 || format == null) {
-                    Log.e(TAG, "TTS: 오디오 트랙 없음"); return@execute
-                }
-                extractor.selectTrack(audioTrackIdx)
+                isPlayingTts = true
 
-                val sampleRate  = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                val channels    = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                val channelMask = if (channels == 1) AudioFormat.CHANNEL_OUT_MONO
-                                  else AudioFormat.CHANNEL_OUT_STEREO
-
-                val minBuf = AudioTrack.getMinBufferSize(
-                    sampleRate, channelMask, AudioFormat.ENCODING_PCM_16BIT)
-
-                // STREAM_VOICE_CALL 로 전화 업링크에 직접 주입
-                @Suppress("DEPRECATION")
-                audioTrack = AudioTrack(
-                    AudioManager.STREAM_VOICE_CALL,
-                    sampleRate, channelMask,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    minBuf * 4,
-                    AudioTrack.MODE_STREAM
+                // 스피커폰 ON + 마이크 개방 → 스피커 소리를 마이크가 집음
+                audioManager.isSpeakerphoneOn = true
+                audioManager.isMicrophoneMute = false
+                // TTS 볼륨 최대로
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_ALARM,
+                    audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                    0
                 )
-                audioTrack.play()
 
-                codec = MediaCodec.createDecoderByType(
-                    format.getString(MediaFormat.KEY_MIME)!!)
-                codec.configure(format, null, null, 0)
-                codec.start()
-
-                val info    = MediaCodec.BufferInfo()
-                var sawEOS  = false
-                val timeout = 10_000L
-
-                while (!sawEOS) {
-                    // 입력 버퍼에 압축 데이터 공급
-                    val inIdx = codec.dequeueInputBuffer(timeout)
-                    if (inIdx >= 0) {
-                        val buf = codec.getInputBuffer(inIdx)!!
-                        val n   = extractor.readSampleData(buf, 0)
-                        if (n < 0) {
-                            codec.queueInputBuffer(inIdx, 0, 0, 0,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            sawEOS = true
-                        } else {
-                            codec.queueInputBuffer(inIdx, 0, n,
-                                extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
-                    }
-                    // 출력 버퍼에서 PCM 꺼내 AudioTrack으로 전송
-                    val outIdx = codec.dequeueOutputBuffer(info, timeout)
-                    if (outIdx >= 0) {
-                        val pcm = codec.getOutputBuffer(outIdx)!!
-                        val pcmBytes = ByteArray(info.size)
-                        pcm.get(pcmBytes)
-                        audioTrack.write(pcmBytes, 0, pcmBytes.size)
-                        codec.releaseOutputBuffer(outIdx, false)
-                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0)
-                            sawEOS = true
+                mediaPlayer?.release()
+                mediaPlayer = MediaPlayer().apply {
+                    @Suppress("DEPRECATION")
+                    setAudioStreamType(AudioManager.STREAM_ALARM)
+                    setDataSource(tempFile.absolutePath)
+                    prepare()
+                    start()
+                    setOnCompletionListener {
+                        isPlayingTts = false
+                        // 원래 스피커/마이크 상태 복구
+                        audioManager.isSpeakerphoneOn = isSpeakerOn
+                        audioManager.isMicrophoneMute = isMuted
+                        // TTS 볼륨 원상복구
+                        audioManager.setStreamVolume(
+                            AudioManager.STREAM_ALARM,
+                            audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM) / 2,
+                            0
+                        )
+                        tempFile.delete()
+                        release()
+                        if (!isPlayingTts) listenStt()
+                        Log.d(TAG, "TTS 재생 완료")
                     }
                 }
-                audioTrack.stop()
-                Log.d(TAG, "TTS 재생 완료 (업링크 주입)")
+                Log.d(TAG, "TTS 재생 시작 (STREAM_ALARM, ${bytes.size} bytes)")
             } catch (e: Exception) {
-                Log.e(TAG, "TTS 재생 오류: ${e.message}")
-            } finally {
-                try { codec?.stop(); codec?.release() } catch (_: Exception) {}
-                try { extractor?.release() } catch (_: Exception) {}
-                try { audioTrack?.release() } catch (_: Exception) {}
-                tempFile.delete()
                 isPlayingTts = false
-                audioManager.isMicrophoneMute = isMuted
-                mainHandler.post { listenStt() }
+                Log.e(TAG, "TTS 재생 오류: ${e.message}")
             }
         }
     }
@@ -629,7 +611,7 @@ class VideoCallActivity : AppCompatActivity() {
         audioManager.isSpeakerphoneOn = on
         SignCallService.instance?.setAudioRoute(
             if (on) android.telecom.CallAudioState.ROUTE_SPEAKER
-            else android.telecom.CallAudioState.ROUTE_WIRED_OR_EARPIECE
+            else android.telecom.CallAudioState.ROUTE_EARPIECE
         )
     }
 
@@ -666,9 +648,11 @@ class VideoCallActivity : AppCompatActivity() {
         // 세션 삭제 요청
         webSocket?.send("""{"type":"close","sessionId":"$sessionId"}""")
         webSocket?.close(1000, "Activity destroyed")
+        listenerWs?.close(1000, "Activity destroyed")
 
-        speechRecognizer?.destroy()
         mediaPlayer?.release()
+        tts?.stop()
+        tts?.shutdown()
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
 
@@ -684,7 +668,9 @@ class VideoCallActivity : AppCompatActivity() {
         RecyclerView.Adapter<ChatAdapter.ViewHolder>() {
 
         inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-            val tvMsg: TextView = view.findViewById(R.id.tv_chat_message)
+            val tvMsg: TextView    = view.findViewById(R.id.tv_chat_message)
+            val tvSender: TextView = view.findViewById(R.id.tv_sender)
+            val viewBar: View      = view.findViewById(R.id.view_bar)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -696,29 +682,17 @@ class VideoCallActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val msg = messages[position]
             holder.tvMsg.text = msg.text
-
-            val lp = holder.tvMsg.layoutParams as? FrameLayout.LayoutParams
-                ?: FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
+            holder.tvMsg.background = null
 
             if (msg.isMe) {
-                // 내 말풍선: 오른쪽 정렬, 핑크 배경
-                lp.gravity = Gravity.END
-                lp.marginStart = 80
-                lp.marginEnd = 0
-                holder.tvMsg.setBackgroundResource(R.drawable.bg_chat_bubble_mine)
-                holder.tvMsg.setTextColor(0xFF1A1A1A.toInt())
+                holder.tvSender.text = "나"
+                holder.tvSender.setTextColor(0xFF6200EE.toInt())
+                holder.viewBar.setBackgroundColor(0xFF6200EE.toInt())
             } else {
-                // 상대방 말풍선: 왼쪽 정렬, 흰색 배경
-                lp.gravity = Gravity.START
-                lp.marginStart = 0
-                lp.marginEnd = 80
-                holder.tvMsg.setBackgroundResource(R.drawable.bg_chat_bubble_theirs)
-                holder.tvMsg.setTextColor(0xFF1A1A1A.toInt())
+                holder.tvSender.text = "상대방"
+                holder.tvSender.setTextColor(0xFF0288D1.toInt())
+                holder.viewBar.setBackgroundColor(0xFF0288D1.toInt())
             }
-            holder.tvMsg.layoutParams = lp
         }
 
         override fun getItemCount() = messages.size

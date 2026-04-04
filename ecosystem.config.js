@@ -1,4 +1,4 @@
-module.exports = {
+  module.exports = {
   apps: [
     {
       name: "node-server",
@@ -27,7 +27,7 @@ module.exports = {
       wait_ready: true,
       listen_timeout: 60000,
       env: {
-        MODEL_NAME: "top50",        // top30 또는 top50
+        MODEL_NAME: "demo",        // top30, top50, 또는 demo (demo_gesture_2026-03-31_v1)
         NODE_SERVER_URL: "http://localhost:3000",
       },
     },

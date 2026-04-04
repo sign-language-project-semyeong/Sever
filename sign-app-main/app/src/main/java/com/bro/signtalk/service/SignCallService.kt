@@ -90,12 +90,12 @@ class SignCallService : InCallService() {
 
             showCallNotification(call.details.handle?.schemeSpecificPart ?: "", isIncoming = true, isConnected = false)
         } else {
+            // 음성통화 → 수어 화면 / 영상통화 → 일반 통화 화면
             val targetActivity = if (isVideoCall) {
-                VideoCallActivity::class.java
+                com.bro.signtalk.ui.CallActivity::class.java
             } else {
                 VideoCallActivity::class.java
             }
-
             val intent = Intent(this, targetActivity).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 putExtra("receiver_phone", call.details.handle?.schemeSpecificPart)

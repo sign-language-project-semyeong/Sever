@@ -1,7 +1,6 @@
 package com.bro.signtalk.ui
 
 import android.widget.Chronometer
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -13,6 +12,7 @@ import android.provider.ContactsContract
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -145,11 +145,7 @@ class CallActivity : AppCompatActivity() {
     }
 
     private fun setupKeypad() {
-        val buttonIds = arrayOf(R.id.btn_0, R.id.btn_1, R.id.btn_2, R.id.btn_3, R.id.btn_4, R.id.btn_5, R.id.btn_6, R.id.btn_7, R.id.btn_8, R.id.btn_9, R.id.btn_star, R.id.btn_pound)
-        val digits = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '#')
-        buttonIds.forEachIndexed { index, id ->
-            findViewById<View>(id)?.setOnClickListener { sendDtmf(digits[index]) }
-        }
+        // 키패드 UI 제거됨 - DTMF 미사용
     }
 
     private fun sendDtmf(digit: Char) {

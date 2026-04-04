@@ -1,21 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp"
-    android:paddingStart="8dp"
-    android:paddingEnd="8dp">
+    android:orientation="horizontal"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp"
+    android:paddingEnd="16dp">
 
-    <TextView
-        android:id="@+id/tv_chat_message"
-        android:layout_width="wrap_content"
+    <!-- 화자 구분 컬러 바 -->
+    <View
+        android:id="@+id/view_bar"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:maxWidth="260dp"
-        android:padding="10dp"
-        android:textSize="15sp"
-        android:textColor="#1A1A1A"
-        android:lineSpacingExtra="2dp" />
+        android:orientation="vertical">
 
-</FrameLayout>
+        <!-- 화자 레이블 -->
+        <TextView
+            android:id="@+id/tv_sender"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="3dp" />
+
+        <!-- 메시지 텍스트 -->
+        <TextView
+            android:id="@+id/tv_chat_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="16sp"
+            android:textColor="#1A1A1A"
+            android:lineSpacingExtra="3dp" />
+
+    </LinearLayout>
+
+</LinearLayout>
