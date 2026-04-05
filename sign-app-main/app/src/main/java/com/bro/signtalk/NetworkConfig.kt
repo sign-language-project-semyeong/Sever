@@ -1,7 +1,8 @@
 ﻿package com.bro.signtalk
 
 object NetworkConfig {
-    // Production endpoint (AWS)
-    const val BASE_URL = "https://sign-call.p-e.kr"
-    const val WS_URL   = "wss://sign-call.p-e.kr"
+    // Local test
+    private const val SERVER_IP = "192.168.123.100"
+    const val BASE_URL = "http://$SERVER_IP:3001"
+    const val WS_URL   = "ws://$SERVER_IP:3001"
 }

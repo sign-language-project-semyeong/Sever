@@ -32,43 +32,70 @@ from src.models.gru_model import GRUSignClassifier
 from src.preprocess.extract_landmarks import HandLandmarkExtractor
 
 # ── 경로 상수 ─────────────────────────────────────────────────────────────────
-BASE_DIR   = Path(__file__).parent
-DEMO_MODEL = BASE_DIR / "demo_gesture_2026-03-31_v1" / "models" / "best_gru_model.pt"
-HAND_TASK  = BASE_DIR / "ab_final20" / "hand_landmarker.task"
+BASE_DIR  = Path(__file__).parent
+HAND_TASK = BASE_DIR / "sign-language-ai-main" / "models" / "mediapipe" / "hand_landmarker.task"
+
+# 사용할 모델 목록 (전부 MediaPipe 126-dim 좌표로 학습된 것만)
+MODEL_PATHS = [
+    BASE_DIR / "demo_gesture_2026-03-31_v1" / "models" / "best_gru_model.pt",
+    BASE_DIR / "sign-language-ai-main" / "models" / "checkpoints_top50" / "best_gru_model.pt",
+    BASE_DIR / "sign-language-ai-main" / "models" / "checkpoints_top30" / "best_gru_model.pt",
+]
+
+# top30에서 제외할 이상한 레이블
+_EXCLUDE_LABELS = {"지시", "지시#", "구형", "너나같다", "등수", "키우다", "한적있다", "방문"}
 
 # ── 추론 하이퍼파라미터 ────────────────────────────────────────────────────────
-THRESHOLD     = 0.58   # 신뢰도 임계값 (클래스 적을수록 낮춰도 됨)
-STABLE_FRAMES = 4      # 연속 프레임 안정 기준 (6→4, 빠른 커밋)
-VOTE_WINDOW   = 8      # 투표 창 크기 (10→8)
-COOLDOWN      = 6      # 커밋 후 쿨다운 프레임 수 (10→6)
-MIN_TOKEN_GAP = 0.6    # 단어 커밋 최소 간격 (0.8→0.6초)
-
-# ── 모델 로드 (전역 1회) ─────────────────────────────────────────────────────
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-_checkpoint = torch.load(str(DEMO_MODEL), map_location=device, weights_only=False)
-_model = GRUSignClassifier(
-    input_size  = int(_checkpoint.get("input_size",  126)),
-    hidden_size = int(_checkpoint.get("hidden_size", 128)),
-    num_layers  = int(_checkpoint.get("num_layers",    2)),
-    num_classes = int(_checkpoint["num_classes"]),
-    dropout     = float(_checkpoint.get("dropout", 0.2)),
-).to(device)
-_model.load_state_dict(_checkpoint["model_state_dict"])
-_model.eval()
+THRESHOLD     = 0.55   # 낮을수록 더 쉽게 인식
+STABLE_FRAMES = 3      # 낮을수록 더 빠르게 확정
+VOTE_WINDOW   = 6      # 투표 창 줄임
+COOLDOWN      = 4      # 쿨다운 짧게
+MIN_TOKEN_GAP = 0.4    # 단어 간격 짧게
 
 import re as _re
 def _clean_label(raw: str) -> str:
-    """'가다1', '지시1#', '등수:1등' 같은 raw 레이블을 깔끔한 한글 단어로 변환"""
-    s = raw.split(":")[0]          # '등수:1등' → '등수'
-    s = _re.sub(r"[0-9#]+$", "", s)  # 끝 숫자/# 제거
+    s = raw.split(":")[0]
+    s = _re.sub(r"[0-9#]+$", "", s)
     return s.strip() or raw
 
-_idx2label: dict[int, str] = {int(k): _clean_label(str(v)) for k, v in _checkpoint["idx2label"].items()}
-_max_len    = int(_checkpoint.get("max_len",    45))
-_input_size = int(_checkpoint.get("input_size", 126))
+# ── 모델 로드 (전역 1회) ─────────────────────────────────────────────────────
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print(f"[AI Server] 모델 로드 완료 | {len(_idx2label)} 클래스 | device={device}")
-print(f"[AI Server] 인식 가능 단어: {list(_idx2label.values())}")
+class ModelEntry:
+    def __init__(self, path: Path):
+        ckpt = torch.load(str(path), map_location=device, weights_only=False)
+        m = GRUSignClassifier(
+            input_size  = int(ckpt.get("input_size",  126)),
+            hidden_size = int(ckpt.get("hidden_size", 128)),
+            num_layers  = int(ckpt.get("num_layers",    2)),
+            num_classes = int(ckpt["num_classes"]),
+            dropout     = float(ckpt.get("dropout", 0.2)),
+        ).to(device)
+        m.load_state_dict(ckpt["model_state_dict"])
+        m.eval()
+        self.model     = m
+        self.idx2label = {int(k): _clean_label(str(v)) for k, v in ckpt["idx2label"].items()}
+        self.max_len   = int(ckpt.get("max_len",    45))
+        self.input_size= int(ckpt.get("input_size", 126))
+        # 제외 레이블 필터링
+        self.valid_idx = {i for i, lbl in self.idx2label.items() if lbl not in _EXCLUDE_LABELS}
+
+_models: list[ModelEntry] = []
+for _p in MODEL_PATHS:
+    if _p.exists():
+        _me = ModelEntry(_p)
+        _models.append(_me)
+        print(f"[AI Server] 모델 로드: {_p.name} | {len(_me.idx2label)}클래스")
+
+# 전체 인식 가능 단어 (중복 제거)
+_all_labels = sorted(set(
+    lbl for m in _models for lbl in m.idx2label.values()
+    if lbl not in _EXCLUDE_LABELS
+))
+_max_len    = max(m.max_len for m in _models)
+_input_size = 126
+
+print(f"[AI Server] 총 인식 가능 단어 ({len(_all_labels)}개): {_all_labels}")
 
 # ── 세션 상태 ─────────────────────────────────────────────────────────────────
 class SessionState:
@@ -146,16 +173,23 @@ def infer():
         has_hands = bool(np.any(np.abs(feature) > 1e-6))
         sess.frame_buffer.append(feature)
 
-        # 2. GRU 추론
-        seq        = pad_sequence(list(sess.frame_buffer), _max_len, _input_size)
-        seq_tensor = torch.tensor(seq, dtype=torch.float32, device=device)
-
-        with torch.no_grad():
-            logits    = _model(seq_tensor)
-            probs     = torch.softmax(logits, dim=1)[0]
-            top_val, top_idx = probs.max(dim=0)
-            top_label = _idx2label[int(top_idx)]
-            top_score = float(top_val)
+        # 2. 멀티모델 GRU 추론 → 가장 높은 신뢰도 채택
+        top_label = ""
+        top_score = 0.0
+        for me in _models:
+            seq        = pad_sequence(list(sess.frame_buffer), me.max_len, me.input_size)
+            seq_tensor = torch.tensor(seq, dtype=torch.float32, device=device)
+            with torch.no_grad():
+                probs = torch.softmax(me.model(seq_tensor), dim=1)[0]
+                # 제외 레이블 마스킹
+                for i in range(len(probs)):
+                    if i not in me.valid_idx:
+                        probs[i] = 0.0
+                val, idx = probs.max(dim=0)
+                lbl = me.idx2label[int(idx)]
+                if float(val) > top_score:
+                    top_score = float(val)
+                    top_label = lbl
 
         # 3. 투표 + 안정화 → 단어 커밋
         if has_hands and len(sess.frame_buffer) >= min(8, _max_len) and top_score >= THRESHOLD:
@@ -217,7 +251,7 @@ def health():
     return jsonify({
         "ok":     True,
         "device": str(device),
-        "labels": list(_idx2label.values()),
+        "labels": _all_labels,
     })
 
 
