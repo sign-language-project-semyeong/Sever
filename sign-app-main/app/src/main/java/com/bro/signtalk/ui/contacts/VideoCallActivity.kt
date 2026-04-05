@@ -541,7 +541,6 @@ class VideoCallActivity : AppCompatActivity() {
                         )
                         tempFile.delete()
                         release()
-                        if (!isPlayingTts) listenStt()
                         Log.d(TAG, "TTS 재생 완료")
                     }
                 }
