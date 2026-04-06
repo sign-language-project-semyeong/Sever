@@ -27,7 +27,9 @@ module.exports = {
       wait_ready: true,
       listen_timeout: 60000,
       env: {
-        MODEL_NAME: "top30", // top30, top50, or demo
+        MODEL_NAME: "demo", // top30, top50, or demo
+        CHECKPOINT_PATH:
+          "C:/project/Sever/sign-language-ai-main/demo_gesture_2026-03-31_v1/models/best_gru_model.pt",
         NODE_SERVER_URL: "http://localhost:3000",
       },
     },
