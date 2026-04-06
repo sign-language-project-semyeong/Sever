@@ -36,7 +36,7 @@ import os
 NODE_SERVER_URL   = os.environ.get("NODE_SERVER_URL", "http://localhost:3000")
 
 # 모델 선택: MODEL_NAME=top30, top50, demo / 또는 CHECKPOINT_PATH 직접 지정
-_model_name = os.environ.get("MODEL_NAME", "top50").lower()
+_model_name = os.environ.get("MODEL_NAME", "top30").lower()
 _checkpoint_override = os.environ.get("CHECKPOINT_PATH", "")
 
 if _checkpoint_override:

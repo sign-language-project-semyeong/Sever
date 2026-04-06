@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import sys
 import time
 from collections import Counter, deque
@@ -32,12 +33,41 @@ from src.models.gru_model import GRUSignClassifier
 from src.preprocess.extract_landmarks import HandLandmarkExtractor
 
 # ── 경로 상수 ─────────────────────────────────────────────────────────────────
-BASE_DIR  = Path(__file__).parent
-HAND_TASK = BASE_DIR / "sign-language-ai-main" / "models" / "mediapipe" / "hand_landmarker.task"
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_existing_path(env_name: str, candidates: list[Path]) -> Path:
+    override = os.environ.get(env_name, "").strip()
+    if override:
+        path = Path(override)
+        if not path.is_absolute():
+            path = BASE_DIR / path
+        return path
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+HAND_TASK = _resolve_existing_path(
+    "HAND_LANDMARKER_PATH",
+    [
+        BASE_DIR / "NIKL_TOP30_MODEL" / "models" / "hand_landmarker.task",
+        BASE_DIR / "sign-language-ai-main" / "models" / "mediapipe" / "hand_landmarker.task",
+    ],
+)
 
 # 사용할 모델 목록 (좌표 데이터 있는 것만)
 MODEL_PATHS = [
-    BASE_DIR / "demo_gesture_2026-03-31_v1" / "models" / "best_gru_model.pt",
+    _resolve_existing_path(
+        "CHECKPOINT_PATH",
+        [
+            BASE_DIR / "NIKL_TOP30_MODEL" / "models" / "best_gru_model.pt",
+            BASE_DIR / "sign-language-ai-main" / "models" / "checkpoints_top30" / "best_gru_model.pt",
+            BASE_DIR / "demo_gesture_2026-03-31_v1" / "models" / "best_gru_model.pt",
+        ],
+    ),
 ]
 
 # top30에서 제외할 이상한 레이블
@@ -86,6 +116,16 @@ for _p in MODEL_PATHS:
         print(f"[AI Server] 모델 로드: {_p.name} | {len(_me.idx2label)}클래스")
 
 # 전체 인식 가능 단어 (중복 제거)
+if not HAND_TASK.exists():
+    raise FileNotFoundError(f"HandLandmarker model not found: {HAND_TASK}")
+
+if not _models:
+    checked_paths = ", ".join(str(path) for path in MODEL_PATHS)
+    raise FileNotFoundError(f"No checkpoint model found. Checked: {checked_paths}")
+
+print(f"[AI Server] checkpoint path: {MODEL_PATHS[0]}")
+print(f"[AI Server] hand task path: {HAND_TASK}")
+
 _all_labels = sorted(set(
     lbl for m in _models for lbl in m.idx2label.values()
     if lbl not in _EXCLUDE_LABELS
