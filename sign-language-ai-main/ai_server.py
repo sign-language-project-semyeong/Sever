@@ -35,22 +35,20 @@ from src.preprocess.extract_landmarks import HandLandmarkExtractor
 BASE_DIR  = Path(__file__).parent
 HAND_TASK = BASE_DIR / "sign-language-ai-main" / "models" / "mediapipe" / "hand_landmarker.task"
 
-# 사용할 모델 목록 (전부 MediaPipe 126-dim 좌표로 학습된 것만)
+# 사용할 모델 목록 (좌표 데이터 있는 것만)
 MODEL_PATHS = [
     BASE_DIR / "demo_gesture_2026-03-31_v1" / "models" / "best_gru_model.pt",
-    BASE_DIR / "sign-language-ai-main" / "models" / "checkpoints_top50" / "best_gru_model.pt",
-    BASE_DIR / "sign-language-ai-main" / "models" / "checkpoints_top30" / "best_gru_model.pt",
 ]
 
 # top30에서 제외할 이상한 레이블
 _EXCLUDE_LABELS = {"지시", "지시#", "구형", "너나같다", "등수", "키우다", "한적있다", "방문"}
 
 # ── 추론 하이퍼파라미터 ────────────────────────────────────────────────────────
-THRESHOLD     = 0.55   # 낮을수록 더 쉽게 인식
-STABLE_FRAMES = 3      # 낮을수록 더 빠르게 확정
-VOTE_WINDOW   = 6      # 투표 창 줄임
-COOLDOWN      = 4      # 쿨다운 짧게
-MIN_TOKEN_GAP = 0.4    # 단어 간격 짧게
+THRESHOLD     = 0.60   # 5클래스 모델 최적값
+STABLE_FRAMES = 3
+VOTE_WINDOW   = 6
+COOLDOWN      = 4
+MIN_TOKEN_GAP = 0.4
 
 import re as _re
 def _clean_label(raw: str) -> str:
